@@ -76,7 +76,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .antMatchers(HttpMethod.DELETE, "/api/process-steps/**").hasRole("SUPERVISOR")
                 .antMatchers(HttpMethod.POST, "/api/production-orders").hasRole("SUPERVISOR")
                 .antMatchers(HttpMethod.PUT, "/api/production-orders/**").hasRole("SUPERVISOR")
-                .antMatchers("/api/dashboard/**").hasRole("SUPERVISOR")
+                //.antMatchers("/api/dashboard/**").hasRole("SUPERVISOR")
+                .antMatchers("/api/dashboard/**").hasAnyRole("SUPERVISOR", "OPERATOR", "QC")
                 .antMatchers("/api/reports/**").hasRole("SUPERVISOR")
                 .antMatchers("/api/traceability/**").hasAnyRole("SUPERVISOR", "QC")
                 // Tất cả API còn lại yêu cầu xác thực

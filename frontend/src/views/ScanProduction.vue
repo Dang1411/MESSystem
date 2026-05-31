@@ -184,7 +184,8 @@ export default {
       try {
         const payload = {
           serialCode: this.serialInfo.serialCode,
-          stepId: this.serialInfo.nextStepId || this.serialInfo.currentStepId,
+          //stepId: this.serialInfo.nextStepId || this.serialInfo.currentStepId,
+          stepId: this.serialInfo.currentStepId,
           result: this.execForm.result,
           notes: this.execForm.notes || null,
           defectId: this.execForm.defectId || null
