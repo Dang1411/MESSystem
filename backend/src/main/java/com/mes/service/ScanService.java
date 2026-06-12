@@ -173,16 +173,61 @@ public class ScanService {
     /**
      * Xử lý REWORK: quay lại công đoạn được chỉ định
      */
-    private void handleRework(ProductSerial serial, ExecutionRequest request, Integer productId) {
-        serial.setStatus("REWORK");
-        if (request.getReworkStepId() != null) {
-            ProcessStep reworkStep = routeRepository
-                    .findByProductIdAndProcessStepId(productId, request.getReworkStepId())
-                    .map(r -> r.getProcessStep())
-                    .orElseThrow(() -> new MesException("Công đoạn rework không hợp lệ"));
-            serial.setCurrentStep(reworkStep);
-        }
-    }
+    // private void handleRework(ProductSerial serial, ExecutionRequest request, Integer productId) {
+    //     serial.setStatus("REWORK");
+    //     if (request.getReworkStepId() != null) {
+    //         ProcessStep reworkStep = routeRepository
+    //                 .findByProductIdAndProcessStepId(productId, request.getReworkStepId())
+    //                 .map(r -> r.getProcessStep())
+    //                 .orElseThrow(() -> new MesException("Công đoạn rework không hợp lệ"));
+    //         serial.setCurrentStep(reworkStep);
+    //     }
+    // }
+    /**
+ * Xử lý REWORK: quay lại công đoạn được chỉ định
+ */
+            private void handleRework(ProductSerial serial,
+                                    ExecutionRequest request,
+                                    Integer productId) {
+
+                serial.setStatus("REWORK");
+
+                if (request.getReworkStepId() == null) {
+                    throw new MesException(
+                            "Vui lòng chọn công đoạn làm lại");
+                }
+
+                // Công đoạn hiện tại
+                ProductProcessRoute currentRoute =
+                        routeRepository
+                                .findByProductIdAndProcessStepId(
+                                        productId,
+                                        serial.getCurrentStep().getId())
+                                .orElseThrow(() ->
+                                        new MesException(
+                                                "Không tìm thấy công đoạn hiện tại"));
+
+                // Công đoạn muốn rework
+                ProductProcessRoute reworkRoute =
+                        routeRepository
+                                .findByProductIdAndProcessStepId(
+                                        productId,
+                                        request.getReworkStepId())
+                                .orElseThrow(() ->
+                                        new MesException(
+                                                "Công đoạn rework không hợp lệ"));
+
+                // Không cho rework tới công đoạn phía sau
+                if (reworkRoute.getStepOrder()
+                        > currentRoute.getStepOrder()) {
+
+                    throw new MesException(
+                            "Không thể rework tới công đoạn phía sau");
+                }
+
+                serial.setCurrentStep(
+                        reworkRoute.getProcessStep());
+            }
 
     /**
      * Kiểm tra thứ tự công đoạn: phải theo thứ tự, không được nhảy công đoạn
@@ -264,6 +309,35 @@ public class ScanService {
         response.setProductName(serial.getProduct().getProductName());
         response.setTotalSteps(totalSteps);
         response.setUpdatedAt(serial.getUpdatedAt());
+
+        //chon tram khi rework
+        List<ScanResponse.StepItem> stepItems =
+                    routes.stream()
+                            .map(r -> {
+                                ScanResponse.StepItem item =
+                                        new ScanResponse.StepItem();
+
+                                item.setId(
+                                        r.getProcessStep().getId()
+                                );
+
+                                item.setStepCode(
+                                        r.getProcessStep().getStepCode()
+                                );
+
+                                item.setStepName(
+                                        r.getProcessStep().getStepName()
+                                );
+
+                                item.setStepOrder(
+                                        r.getStepOrder()
+                                );
+
+                                return item;
+                            })
+                            .collect(Collectors.toList());
+
+            response.setProcessSteps(stepItems);
 
         // Công đoạn hiện tại
         if (serial.getCurrentStep() != null) {

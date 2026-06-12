@@ -11,6 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -42,11 +44,9 @@ public class ProductionOrderService {
         return toResponse(findById(id));
     }
 
+    // ================== CREATE ORDER ==================
     @Transactional
     public ProductionOrderResponse createOrder(ProductionOrderRequest request, String creatorUsername) {
-        if (orderRepository.existsByOrderCode(request.getOrderCode())) {
-            throw new MesException("Mã lệnh sản xuất '" + request.getOrderCode() + "' đã tồn tại");
-        }
 
         Product product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new MesException("Không tìm thấy sản phẩm"));
@@ -54,14 +54,20 @@ public class ProductionOrderService {
         // Kiểm tra sản phẩm có quy trình chưa
         int routeCount = routeRepository.countByProductId(product.getId());
         if (routeCount == 0) {
-            throw new MesException("Sản phẩm '" + product.getProductCode() + "' chưa có quy trình công đoạn. Vui lòng thiết lập trước.");
+            throw new MesException(
+                    "Sản phẩm '" + product.getProductCode() +
+                    "' chưa có quy trình công đoạn. Vui lòng thiết lập trước."
+            );
         }
 
         User creator = userRepository.findByUsername(creatorUsername)
                 .orElseThrow(() -> new MesException("Không tìm thấy người dùng"));
 
+        //  TỰ SINH MÃ LỆNH SẢN XUẤT
+        String orderCode = generateOrderCode(product);
+
         ProductionOrder order = new ProductionOrder();
-        order.setOrderCode(request.getOrderCode());
+        order.setOrderCode(orderCode);
         order.setProduct(product);
         order.setPlannedQuantity(request.getPlannedQuantity());
         order.setStartDate(request.getStartDate());
@@ -72,91 +78,88 @@ public class ProductionOrderService {
 
         order = orderRepository.save(order);
 
-        // Tự động sinh serial sản phẩm
+        // Sinh serial sản phẩm
         generateSerials(order, product);
 
         return toResponse(order);
     }
 
     /**
-     * Sinh danh sách serial theo format: ORDER_CODE-PRODUCT_CODE-0001
+     * Sinh danh sách serial theo format:
+     * ORDER_CODE-PRODUCT_CODE-0001
      */
     private void generateSerials(ProductionOrder order, Product product) {
         for (int i = 1; i <= order.getPlannedQuantity(); i++) {
             String serialCode = String.format("%s-%s-%04d",
-                    order.getOrderCode(), product.getProductCode(), i);
+                    order.getOrderCode(),
+                    product.getProductCode(),
+                    i
+            );
 
             ProductSerial serial = new ProductSerial();
             serial.setSerialCode(serialCode);
             serial.setProductionOrder(order);
             serial.setProduct(product);
             serial.setStatus("WAITING");
+
             serialRepository.save(serial);
         }
     }
 
-    // @Transactional
-    // public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
-    //     ProductionOrder order = findById(id);
-    //     validateStatusTransition(order.getStatus(), newStatus);
-    //     order.setStatus(newStatus);
-    //     return toResponse(orderRepository.save(order));
-    // }
+    // ================== UPDATE STATUS ==================
     @Transactional
-public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
+    public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
 
-    ProductionOrder order = findById(id);
+        ProductionOrder order = findById(id);
+        validateStatusTransition(order.getStatus(), newStatus);
+        order.setStatus(newStatus);
 
-    validateStatusTransition(order.getStatus(), newStatus);
+        // Khi bắt đầu sản xuất → gán công đoạn đầu cho serial
+        if (newStatus.equals("IN_PROGRESS")) {
 
-    order.setStatus(newStatus);
+            ProductProcessRoute firstRoute = routeRepository
+                    .findByProductIdAndStepOrder(order.getProduct().getId(), 1)
+                    .orElseThrow(() ->
+                            new MesException("Không tìm thấy công đoạn đầu tiên")
+                    );
 
-    // THÊM ĐOẠN NÀY
-    if (newStatus.equals("IN_PROGRESS")) {
+            List<ProductSerial> serials =
+                    serialRepository.findByProductionOrderId(order.getId());
 
-        ProductProcessRoute firstRoute = routeRepository
-                .findByProductIdAndStepOrder(
-                        order.getProduct().getId(),
-                        1
-                )
-                .orElseThrow(() ->
-                        new MesException("Không tìm thấy công đoạn đầu tiên")
-                );
+            for (ProductSerial serial : serials) {
+                if (serial.getStatus().equals("WAITING")
+                        && serial.getCurrentStep() == null) {
 
-        List<ProductSerial> serials =
-                serialRepository.findByProductionOrderId(order.getId());
-
-        for (ProductSerial serial : serials) {
-
-            if (serial.getStatus().equals("WAITING")
-                    && serial.getCurrentStep() == null) {
-
-                serial.setCurrentStep(firstRoute.getProcessStep());
-
-                serialRepository.save(serial);
+                    serial.setCurrentStep(firstRoute.getProcessStep());
+                    serialRepository.save(serial);
+                }
             }
         }
+
+        return toResponse(orderRepository.save(order));
     }
 
-    return toResponse(orderRepository.save(order));
-}
-
+    // ================== UPDATE ORDER ==================
     @Transactional
     public ProductionOrderResponse updateOrder(Integer id, ProductionOrderRequest request) {
         ProductionOrder order = findById(id);
+
         if (!order.getStatus().equals("CREATED")) {
             throw new MesException("Chỉ có thể chỉnh sửa lệnh sản xuất ở trạng thái CREATED");
         }
+
         order.setNotes(request.getNotes());
         order.setStartDate(request.getStartDate());
         order.setEndDate(request.getEndDate());
+
         return toResponse(orderRepository.save(order));
     }
 
     public List<ProductSerialResponse> getSerialsByOrder(Integer orderId) {
-        findById(orderId); // validate
+        findById(orderId);
         return serialRepository.findByProductionOrderId(orderId)
-                .stream().map(this::toSerialResponse).collect(Collectors.toList());
+                .stream().map(this::toSerialResponse)
+                .collect(Collectors.toList());
     }
 
     private ProductSerialResponse toSerialResponse(ProductSerial s) {
@@ -167,17 +170,20 @@ public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
         r.setOrderCode(s.getProductionOrder().getOrderCode());
         r.setProductCode(s.getProduct().getProductCode());
         r.setProductName(s.getProduct().getProductName());
-        r.setCurrentStepName(s.getCurrentStep() != null ? s.getCurrentStep().getStepName() : null);
+        r.setCurrentStepName(
+                s.getCurrentStep() != null
+                        ? s.getCurrentStep().getStepName()
+                        : null
+        );
         r.setCreatedAt(s.getCreatedAt());
         r.setUpdatedAt(s.getUpdatedAt());
         return r;
     }
 
-    /**
-     * Kiểm tra và cập nhật trạng thái lệnh sản xuất dựa trên serial
-     */
+    // ================== REFRESH STATUS ==================
     @Transactional
     public void refreshOrderStatus(Integer orderId) {
+
         ProductionOrder order = findById(orderId);
         if (order.getStatus().equals("CANCELLED")) return;
 
@@ -206,20 +212,27 @@ public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
             case "IN_PROGRESS":
                 valid = next.equals("COMPLETED") || next.equals("CANCELLED");
                 break;
-            default:
-                break;
         }
         if (!valid) {
-            throw new MesException("Không thể chuyển trạng thái từ " + current + " sang " + next);
+            throw new MesException(
+                    "Không thể chuyển trạng thái từ " + current + " sang " + next
+            );
         }
     }
 
     public ProductionOrder findById(Integer id) {
         return orderRepository.findById(id)
-                .orElseThrow(() -> new MesException("Không tìm thấy lệnh sản xuất với ID: " + id, HttpStatus.NOT_FOUND));
+                .orElseThrow(() ->
+                        new MesException(
+                                "Không tìm thấy lệnh sản xuất với ID: " + id,
+                                HttpStatus.NOT_FOUND
+                        )
+                );
     }
 
+    // ================== RESPONSE ==================
     private ProductionOrderResponse toResponse(ProductionOrder o) {
+
         ProductionOrderResponse res = new ProductionOrderResponse();
         res.setId(o.getId());
         res.setOrderCode(o.getOrderCode());
@@ -235,10 +248,15 @@ public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
         res.setCreatedAt(o.getCreatedAt());
         res.setNotes(o.getNotes());
 
-        // Thống kê nhanh serial
-        List<Object[]> stats = serialRepository.countByOrderGroupedByStatus(o.getId());
+        List<Object[]> stats =
+                serialRepository.countByOrderGroupedByStatus(o.getId());
+
         Map<String, Long> statusMap = stats.stream()
-                .collect(Collectors.toMap(s -> (String) s[0], s -> (Long) s[1]));
+                .collect(Collectors.toMap(
+                        s -> (String) s[0],
+                        s -> (Long) s[1]
+                ));
+
         res.setSerialWaiting(statusMap.getOrDefault("WAITING", 0L));
         res.setSerialInProgress(statusMap.getOrDefault("IN_PROGRESS", 0L));
         res.setSerialFinished(statusMap.getOrDefault("FINISHED", 0L));
@@ -246,5 +264,25 @@ public ProductionOrderResponse updateOrderStatus(Integer id, String newStatus) {
         res.setSerialScrap(statusMap.getOrDefault("SCRAP", 0L));
 
         return res;
+    }
+
+    // tự động tạo lệnh 
+    private String generateOrderCode(Product product) {
+
+        String date = LocalDate.now()
+                .format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
+
+        String prefix = "PO-" + product.getProductCode() + "-" + date + "-";
+
+        String maxCode = orderRepository
+                .findMaxOrderCodeByPrefix(product.getProductCode(), prefix);
+
+        int next = 1;
+        if (maxCode != null) {
+            String lastNumber = maxCode.substring(prefix.length());
+            next = Integer.parseInt(lastNumber) + 1;
+        }
+
+        return prefix + String.format("%03d", next);
     }
 }

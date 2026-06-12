@@ -88,10 +88,12 @@
           <form @submit.prevent="createOrder">
             <div class="modal-body">
               <div class="alert alert-danger" v-if="formError">{{ formError }}</div>
-              <div class="form-group">
+
+              <!-- <div class="form-group">
                 <label>Mã lệnh <span class="text-danger">*</span></label>
                 <input v-model="form.orderCode" class="form-control" required placeholder="VD: PO003">
-              </div>
+              </div> -->
+              
               <div class="form-group">
                 <label>Sản phẩm <span class="text-danger">*</span></label>
                 <select v-model="form.productId" class="form-control" required>

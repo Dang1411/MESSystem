@@ -9,9 +9,9 @@ import java.time.LocalDate;
 
 @Data
 public class ProductionOrderRequest {
-
-    @NotBlank(message = "Mã lệnh sản xuất không được để trống")
-    private String orderCode;
+///
+    // @NotBlank(message = "Mã lệnh sản xuất không được để trống")
+    // private String orderCode;
 
     @NotNull(message = "Sản phẩm không được để trống")
     private Integer productId;

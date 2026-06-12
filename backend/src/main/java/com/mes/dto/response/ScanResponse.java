@@ -31,6 +31,7 @@ public class ScanResponse {
     // Tổng số công đoạn
     private Integer totalSteps;
     // Lịch sử xử lý
+    private List<StepItem> processSteps;
     private List<HistoryItem> history;
     private LocalDateTime updatedAt;
 
@@ -44,5 +45,13 @@ public class ScanResponse {
         private LocalDateTime startTime;
         private LocalDateTime endTime;
         private String notes;
+    }
+    @Data
+    public static class StepItem {
+
+    private Integer id;
+    private String stepCode;
+    private String stepName;
+    private Integer stepOrder;
     }
 }

@@ -85,7 +85,7 @@
 
           <!-- Execution panel - only if not terminal status -->
           <div class="card-footer bg-light" v-if="canExecute">
-            <h6 class="mb-3">⚡ Thực hiện công đoạn: <strong>{{ serialInfo.nextStepName || serialInfo.currentStepName }}</strong></h6>
+            <h6 class="mb-3">⚡ Thực hiện công đoạn: <strong>{{serialInfo.currentStepName }}</strong></h6>
             <div class="alert alert-danger" v-if="execError">{{ execError }}</div>
 
             <div class="form-row">
@@ -107,6 +107,34 @@
                   <option v-for="d in defects" :key="d.id" :value="d.id">{{ d.defectName }}</option>
                 </select>
               </div>
+              
+                            <div
+                class="form-group col-md-4"
+                v-if="execForm.result === 'REWORK'"
+              >
+                <label class="small font-weight-bold">
+                  Công đoạn làm lại
+                </label>
+
+                <select
+                  v-model="execForm.reworkStepId"
+                  class="form-control"
+                >
+                  <option value="">
+                    -- Chọn công đoạn --
+                  </option>
+
+                  <option
+                    v-for="step in processSteps"
+                    :key="step.id"
+                    :value="step.id"
+                  >
+                    {{ step.stepOrder }} - {{ step.stepName }}
+                  </option>
+
+                </select>
+              </div>
+          
               <div class="form-group col-md-4">
                 <label class="small font-weight-bold">Ghi chú</label>
                 <input v-model="execForm.notes" type="text" class="form-control" placeholder="Ghi chú thêm...">
@@ -151,8 +179,11 @@ export default {
       lookingUp: false, executing: false,
       serialInfo: null,
       defects: [],
+      //
+      processSteps: [],
+      //
       lookupError: '', execError: '',
-      execForm: { result: '', defectId: '', notes: '' },
+      execForm: { result: '', defectId: '',reworkStepId: '', notes: '' },
       execResult: null
     }
   },
@@ -174,29 +205,77 @@ export default {
       try {
         const res = await scanApi.getSerialInfo(this.scanCode.trim())
         this.serialInfo = res.data
+        //
+        this.processSteps = res.data.processSteps || []
       } catch (e) {
         this.lookupError = e.response?.data?.message || 'Không tìm thấy serial'
       } finally { this.lookingUp = false }
     },
+    // async executeStep() {
+    //   if (!this.execForm.result) return
+    //   this.executing = true; this.execError = ''
+    //   try {
+    //     const payload = {
+    //       serialCode: this.serialInfo.serialCode,
+    //       //stepId: this.serialInfo.nextStepId || this.serialInfo.currentStepId,
+    //       stepId: this.serialInfo.currentStepId,
+    //       result: this.execForm.result,
+    //       notes: this.execForm.notes || null,
+    //       defectId: this.execForm.defectId || null
+    //     }
+    //     const res = await scanApi.execute(payload)
+    //     this.execResult = res.data
+    //     this.serialInfo = null
+    //     this.scanCode = ''
+    //   } catch (e) {
+    //     this.execError = e.response?.data?.message || 'Lỗi khi thực hiện công đoạn'
+    //   } finally { this.executing = false }
+    // },
     async executeStep() {
       if (!this.execForm.result) return
-      this.executing = true; this.execError = ''
+      // Bắt buộc chọn công đoạn khi REWORK
+      if (
+        this.execForm.result === 'REWORK' &&
+        !this.execForm.reworkStepId
+      ) {
+        this.execError = 'Vui lòng chọn công đoạn làm lại'
+        return
+      }
+      this.executing = true
+      this.execError = ''
       try {
         const payload = {
           serialCode: this.serialInfo.serialCode,
-          //stepId: this.serialInfo.nextStepId || this.serialInfo.currentStepId,
+
           stepId: this.serialInfo.currentStepId,
+
           result: this.execForm.result,
+
           notes: this.execForm.notes || null,
-          defectId: this.execForm.defectId || null
+
+          defectId: this.execForm.defectId || null,
+
+          reworkStepId: this.execForm.reworkStepId || null
         }
+
         const res = await scanApi.execute(payload)
+
         this.execResult = res.data
+
         this.serialInfo = null
         this.scanCode = ''
+
       } catch (e) {
-        this.execError = e.response?.data?.message || 'Lỗi khi thực hiện công đoạn'
-      } finally { this.executing = false }
+
+        this.execError =
+          e.response?.data?.message ||
+          'Lỗi khi thực hiện công đoạn'
+
+      } finally {
+
+        this.executing = false
+
+      }
     },
     resetScan() {
       this.scanCode = ''

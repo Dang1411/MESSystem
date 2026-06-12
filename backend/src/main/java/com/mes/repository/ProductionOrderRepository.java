@@ -44,6 +44,22 @@ public interface ProductionOrderRepository extends JpaRepository<ProductionOrder
     List<ProductionOrder> findByDateRange(@Param("from") java.time.LocalDateTime from,
                                            @Param("to") java.time.LocalDateTime to);
 
+
+
+
+
+                                           
+    //tìm mã lớn nhất trong ngày
     @Query("SELECT COUNT(o) FROM ProductionOrder o WHERE o.status IN ('CREATED','IN_PROGRESS')")
     long countActiveOrders();
+    @Query("""
+    SELECT MAX(o.orderCode)
+    FROM ProductionOrder o
+    WHERE o.product.productCode = :productCode
+      AND o.orderCode LIKE :prefix%
+    """)
+    String findMaxOrderCodeByPrefix(
+        @Param("productCode") String productCode,
+        @Param("prefix") String prefix
+);
 }
